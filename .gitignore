@@ -1,0 +1,5 @@
+___module_export.json
+*.o
+picorv32_tangnano_pnr.json
+picorv32_tangnano.fs
+picorv32_tangnano.json
