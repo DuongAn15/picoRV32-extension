@@ -1,5 +1,10 @@
 ___module_export.json
-*.o
 picorv32_tangnano_pnr.json
 picorv32_tangnano.fs
 picorv32_tangnano.json
+src/mem_init.v
+c_code/prog.elf
+c_code/prog.bin
+c_code/*.o
+c_code/*.hex
+c_code/conv_to_init

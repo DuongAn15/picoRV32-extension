@@ -1,7 +1,13 @@
 # Just run "make" to create ../src/mem_init.v
 
 CFLAGS = -mno-save-restore -march=rv32i2p0 -mabi=ilp32 -nostartfiles -nostdlib -static -O1
-LIBS = /usr/lib/gcc/riscv64-unknown-elf/10.2.0/rv32i/ilp32/libgcc.a
+# LIBS = /usr/lib/gcc/riscv64-unknown-elf/10.2.0/rv32i/ilp32/libgcc.a
+CC = riscv64-unknown-elf-gcc
+
+CFLAGS = -march=rv32i -mabi=ilp32 -nostdlib -nostartfiles -O1
+LDFLAGS = -Tlink_cmd.ld
+
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 
 CC = riscv64-unknown-elf-gcc
 OBJCOPY = riscv64-unknown-elf-objcopy
@@ -28,9 +34,12 @@ uart.o: uart.c
 leds.o: leds.c
 	$(CC) $(CFLAGS) -c leds.c
 
+# prog.elf: startup.s main.o countdown_timer.o uart.o leds.o
+#	 $(CC) $(CFLAGS) -Tlink_cmd.ld -o prog.elf startup.s main.o countdown_timer.o \
+#           uart.o leds.o $(LIBS)
+
 prog.elf: startup.s main.o countdown_timer.o uart.o leds.o
-	$(CC) $(CFLAGS) -Tlink_cmd.ld -o prog.elf startup.s main.o countdown_timer.o \
-          uart.o leds.o $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBGCC)
 
 prog.bin: prog.elf
 	$(OBJCOPY) prog.elf -O binary prog.bin
