@@ -10,6 +10,7 @@
         "src/reset.v",
         "src/tang_nano_9k_leds.v",
         "src/uart_wrap.v",
+        "src/my_coprocessor.v",
         "src/gowin_sp/gowin_sp.v"
     ],
     "constraintsFile": "src/picorv32.cst",

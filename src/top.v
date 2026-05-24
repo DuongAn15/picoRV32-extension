@@ -85,6 +85,16 @@ module top (
    wire [31:0]                uart_data_o;
    wire                       uart_ready;
 
+   // ==== PCPI interface ====
+   wire                       pcpi_valid;
+   wire [31:0]                pcpi_insn;
+   wire [31:0]                pcpi_rs1;
+   wire [31:0]                pcpi_rs2;
+   wire                       pcpi_wr;
+   wire [31:0]                pcpi_rd;
+   wire                       pcpi_wait;
+   wire                       pcpi_ready;
+
 `ifdef USE_LA
    // Assigns for external logic analyzer connction
    assign clk_out = clk;
@@ -175,6 +185,22 @@ module top (
       .leds_data_o(leds_data_o)
       );
 
+   my_coprocessor pcpi_inst 
+     (
+      .clk(clk),
+      .resetn(reset_n),
+
+      .pcpi_valid(pcpi_valid),
+      .pcpi_insn(pcpi_insn),
+      .pcpi_rs1(pcpi_rs1),
+      .pcpi_rs2(pcpi_rs2),
+
+      .pcpi_wr(pcpi_wr),
+      .pcpi_rd(pcpi_rd),
+      .pcpi_wait(pcpi_wait),
+      .pcpi_ready(pcpi_ready)
+);
+
    picorv32
      #(
        .STACKADDR(STACKADDR),
@@ -186,7 +212,8 @@ module top (
        .ENABLE_DIV(ENABLE_DIV),
        .ENABLE_FAST_MUL(ENABLE_FAST_MUL),
        .ENABLE_IRQ(1),
-       .ENABLE_IRQ_QREGS(ENABLE_IRQ_QREGS)
+       .ENABLE_IRQ_QREGS(ENABLE_IRQ_QREGS),
+       .ENABLE_PCPI(1)
        ) cpu
        (
         .clk         (clk),
@@ -198,7 +225,16 @@ module top (
         .mem_wdata   (mem_wdata),
         .mem_wstrb   (mem_wstrb),
         .mem_rdata   (mem_rdata),
-        .irq         ('b0)
+        .irq         ('b0),
+        // ==== PCPI ====
+        .pcpi_valid  (pcpi_valid),
+        .pcpi_insn   (pcpi_insn),
+        .pcpi_rs1    (pcpi_rs1),
+        .pcpi_rs2    (pcpi_rs2),
+        .pcpi_wr     (pcpi_wr),
+        .pcpi_rd     (pcpi_rd),
+        .pcpi_wait   (pcpi_wait),
+        .pcpi_ready  (pcpi_ready),
         );
 
 endmodule // top

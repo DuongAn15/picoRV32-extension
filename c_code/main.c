@@ -15,6 +15,154 @@
 unsigned long mem[MEMSIZE];
 unsigned long test_vals[] = {0, 0xffffffff, 0xaaaaaaaa, 0x55555555, 0xdeadbeef};
 
+#define CUSTOM_OP(f3, rd, rs1, rs2) \
+    __asm__ volatile ( \
+        ".insn r 0x0B, %3, 0, %0, %1, %2" \
+        : "=r" (rd) \
+        : "r" (rs1), "r" (rs2), "i" (f3) \
+    )
+
+// ============================
+// Cycle counter
+// ============================
+static inline unsigned int rdcycle() {
+    unsigned int c;
+    asm volatile ("rdcycle %0" : "=r"(c));
+    return c;
+}
+
+
+void uart_print_dec(unsigned int x)
+{
+    char buf[12];
+    int i = 0;
+
+    if (x == 0) {
+        uart_putchar('0');
+        return;
+    }
+
+    while (x > 0) {
+        buf[i++] = '0' + (x % 10);
+        x /= 10;
+    }
+
+    while (i > 0) {
+        uart_putchar(buf[--i]);
+    }
+}
+
+
+// ============================
+// Benchmark tổng hợp
+// ============================
+void benchmark_all()
+{
+    int a = 5, b = 3;
+    int r = 0;
+    int i;
+
+    unsigned int t1, t2;
+    unsigned int loop_cost;
+
+    // =========================
+    // 1. Đo loop overhead
+    // =========================
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        asm volatile("" ::: "memory");
+    }
+    t2 = rdcycle();
+
+    loop_cost = (t2 - t1) / 1000;
+
+    uart_puts("\nLoop overhead: ");
+    uart_print_dec(loop_cost);
+    uart_puts(" cycles\r\n");
+
+    // =====================================================
+    // =============== CPU NATIVE ===========================
+    // =====================================================
+
+    // ---- ADD ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        asm volatile ("add %0, %1, %2"
+            : "=r"(r)
+            : "r"(a), "r"(b));
+    }
+    t2 = rdcycle();
+
+    unsigned int cpu_add = (t2 - t1)/1000 - loop_cost;
+
+    // ---- XOR ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        asm volatile ("xor %0, %1, %2"
+            : "=r"(r)
+            : "r"(a), "r"(b));
+    }
+    t2 = rdcycle();
+
+    unsigned int cpu_xor = (t2 - t1)/1000 - loop_cost;
+
+    // ---- SHL ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        asm volatile ("sll %0, %1, %2"
+            : "=r"(r)
+            : "r"(a), "r"(b));
+    }
+    t2 = rdcycle();
+
+    unsigned int cpu_shl = (t2 - t1)/1000 - loop_cost;
+
+    // =====================================================
+    // =============== PCPI ================================
+    // =====================================================
+
+    // ---- CADD ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        CUSTOM_OP(0, r, a, b);
+    }
+    t2 = rdcycle();
+
+    unsigned int pcpi_add = (t2 - t1)/1000 - loop_cost;
+
+    // ---- CXOR ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        CUSTOM_OP(1, r, a, b);
+    }
+    t2 = rdcycle();
+
+    unsigned int pcpi_xor = (t2 - t1)/1000 - loop_cost;
+
+    // ---- CSHL ----
+    t1 = rdcycle();
+    for (i = 0; i < 1000; i++) {
+        CUSTOM_OP(2, r, a, b);
+    }
+    t2 = rdcycle();
+
+    unsigned int pcpi_shl = (t2 - t1)/1000 - loop_cost;
+
+    // =====================================================
+    // =============== PRINT RESULT =========================
+    // =====================================================
+
+    uart_puts("\n===== CPU cycles =====\r\n");
+    uart_puts("ADD : "); uart_print_dec(cpu_add); uart_puts("\r\n");
+    uart_puts("XOR : "); uart_print_dec(cpu_xor); uart_puts("\r\n");
+    uart_puts("SHL : "); uart_print_dec(cpu_shl); uart_puts("\r\n");
+
+    uart_puts("\n===== PCPI cycles =====\r\n");
+    uart_puts("CADD: "); uart_print_dec(pcpi_add); uart_puts("\r\n");
+    uart_puts("CXOR: "); uart_print_dec(pcpi_xor); uart_puts("\r\n");
+    uart_puts("CSHL: "); uart_print_dec(pcpi_shl); uart_puts("\r\n");
+}
+
 
 /* A simple memory test.  Delete this and also array mem
    above to free much of the SRAM for other things
@@ -216,6 +364,34 @@ int main()
   
   uart_puts("\r\nPress a key to start LED counting and lots of prints:\r\n");
   (void) uart_getchar();
+
+  //benchmark_all();
+
+  int a = 5, b = 3, r;
+
+  CUSTOM_OP(0, r, a, b); // cadd
+  uart_puts("\nResult HEX: ");
+  uart_print_hex(r);
+  uart_puts("\r\n");
+  uart_puts("\nResult: ");
+  uart_print_dec(r);
+  uart_puts("\r\n");
+
+  CUSTOM_OP(1, r, a, b); // xor → 6
+  uart_puts("\nResult HEX: ");
+  uart_print_hex(r);
+  uart_puts("\r\n");
+  uart_puts("\nResult: ");
+  uart_print_dec(r);
+  uart_puts("\r\n");
+
+  CUSTOM_OP(2, r, a, b); // shift → 40
+  uart_puts("\nResult HEX: ");
+  uart_print_hex(r);
+  uart_puts("\r\n");
+  uart_puts("\nResult: ");
+  uart_print_dec(r);
+  uart_puts("\r\n");
 
   /* Print stuff over and over and have the LED count,
      both writing and reading the LED.
