@@ -650,6 +650,8 @@ module picorv32 #(
 	reg instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and;
 	reg instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_ecall_ebreak, instr_fence;
 	reg instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer;
+	reg instr_padds16, instr_psubs16, instr_pmac16;
+	reg is_custom0_alu;
 	wire instr_trap;
 
 	reg [regindex_bits-1:0] decoded_rd, decoded_rs1;
@@ -682,7 +684,8 @@ module picorv32 #(
 			instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai,
 			instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
 			instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_fence,
-			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
+			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer,
+			instr_padds16, instr_psubs16, instr_pmac16};
 
 	wire is_rdcycle_rdcycleh_rdinstr_rdinstrh;
 	assign is_rdcycle_rdcycleh_rdinstr_rdinstrh = |{instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh};
@@ -755,6 +758,9 @@ module picorv32 #(
 		if (instr_maskirq)  new_ascii_instr = "maskirq";
 		if (instr_waitirq)  new_ascii_instr = "waitirq";
 		if (instr_timer)    new_ascii_instr = "timer";
+		if (instr_padds16)  new_ascii_instr = "padds16";
+		if (instr_psubs16)  new_ascii_instr = "psubs16";
+		if (instr_pmac16)   new_ascii_instr = "pmac16";
 	end
 
 	reg [63:0] q_ascii_instr;
@@ -876,6 +882,7 @@ module picorv32 #(
 			is_sb_sh_sw                  <= mem_rdata_latched[6:0] == 7'b0100011;
 			is_alu_reg_imm               <= mem_rdata_latched[6:0] == 7'b0010011;
 			is_alu_reg_reg               <= mem_rdata_latched[6:0] == 7'b0110011;
+			is_custom0_alu               <= mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000111;
 
 			{ decoded_imm_j[31:20], decoded_imm_j[10:1], decoded_imm_j[11], decoded_imm_j[19:12], decoded_imm_j[0] } <= $signed({mem_rdata_latched[31:12], 1'b0});
 
@@ -1092,6 +1099,10 @@ module picorv32 #(
 			instr_maskirq <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000011 && ENABLE_IRQ;
 			instr_timer   <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000101 && ENABLE_IRQ && ENABLE_IRQ_TIMER;
 
+			instr_padds16 <= is_custom0_alu && mem_rdata_q[14:12] == 3'b000;
+			instr_psubs16 <= is_custom0_alu && mem_rdata_q[14:12] == 3'b001;
+			instr_pmac16  <= is_custom0_alu && mem_rdata_q[14:12] == 3'b010;
+
 			is_slli_srli_srai <= is_alu_reg_imm && |{
 				mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000,
 				mem_rdata_q[14:12] == 3'b101 && mem_rdata_q[31:25] == 7'b0000000,
@@ -1223,12 +1234,35 @@ module picorv32 #(
 	reg alu_wait, alu_wait_2;
 
 	reg [31:0] alu_add_sub;
+	reg [31:0] cpuregs_rs1;
+	reg [31:0] cpuregs_rs2;
+
+	reg pmac16_wait = 0;
+
+	// --- P-extension-mini Logic ---
+	wire [16:0] padds16_hi = $signed(reg_op1[31:16]) + $signed(reg_op2[31:16]);
+	wire [16:0] padds16_lo = $signed(reg_op1[15:0])  + $signed(reg_op2[15:0]);
+	wire [16:0] psubs16_hi = $signed(reg_op1[31:16]) - $signed(reg_op2[31:16]);
+	wire [16:0] psubs16_lo = $signed(reg_op1[15:0])  - $signed(reg_op2[15:0]);
+
+	wire [15:0] sat_padds16_hi = (padds16_hi[16] != padds16_hi[15]) ? (padds16_hi[16] ? 16'h8000 : 16'h7FFF) : padds16_hi[15:0];
+	wire [15:0] sat_padds16_lo = (padds16_lo[16] != padds16_lo[15]) ? (padds16_lo[16] ? 16'h8000 : 16'h7FFF) : padds16_lo[15:0];
+	wire [15:0] sat_psubs16_hi = (psubs16_hi[16] != psubs16_hi[15]) ? (psubs16_hi[16] ? 16'h8000 : 16'h7FFF) : psubs16_hi[15:0];
+	wire [15:0] sat_psubs16_lo = (psubs16_lo[16] != psubs16_lo[15]) ? (psubs16_lo[16] ? 16'h8000 : 16'h7FFF) : psubs16_lo[15:0];
+
+	wire [31:0] pmac16_mul_res = $signed(reg_op1[15:0]) * $signed(reg_op2[15:0]);
+	reg [31:0] pmac16_mul_reg;
+	wire [32:0] pmac16_acc = $signed(pmac16_mul_reg) + $signed(cpuregs_rs1); // using cpuregs_rs1 as rd in wait state
+	wire [31:0] sat_pmac16 = (pmac16_acc[32] != pmac16_acc[31]) ? (pmac16_acc[32] ? 32'h80000000 : 32'h7FFFFFFF) : pmac16_acc[31:0];
+	// ------------------------------
+
+
 	reg [31:0] alu_shl, alu_shr;
 	reg alu_eq, alu_ltu, alu_lts;
 
 	generate if (TWO_CYCLE_ALU) begin
 		always @(posedge clk) begin
-			alu_add_sub <= instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
+			alu_add_sub <= instr_padds16 ? {sat_padds16_hi, sat_padds16_lo} : instr_psubs16 ? {sat_psubs16_hi, sat_psubs16_lo} : instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
 			alu_eq <= reg_op1 == reg_op2;
 			alu_lts <= $signed(reg_op1) < $signed(reg_op2);
 			alu_ltu <= reg_op1 < reg_op2;
@@ -1237,7 +1271,7 @@ module picorv32 #(
 		end
 	end else begin
 		always @* begin
-			alu_add_sub = instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
+			alu_add_sub = instr_padds16 ? {sat_padds16_hi, sat_padds16_lo} : instr_psubs16 ? {sat_psubs16_hi, sat_psubs16_lo} : instr_sub ? reg_op1 - reg_op2 : reg_op1 + reg_op2;
 			alu_eq = reg_op1 == reg_op2;
 			alu_lts = $signed(reg_op1) < $signed(reg_op2);
 			alu_ltu = reg_op1 < reg_op2;
@@ -1267,7 +1301,7 @@ module picorv32 #(
 		alu_out = 'bx;
 		(* parallel_case, full_case *)
 		case (1'b1)
-			is_lui_auipc_jal_jalr_addi_add_sub:
+			is_lui_auipc_jal_jalr_addi_add_sub, instr_padds16, instr_psubs16:
 				alu_out = alu_add_sub;
 			is_compare:
 				alu_out = alu_out_0;
@@ -1302,8 +1336,8 @@ module picorv32 #(
 
 	reg cpuregs_write;
 	reg [31:0] cpuregs_wrdata;
-	reg [31:0] cpuregs_rs1;
-	reg [31:0] cpuregs_rs2;
+
+
 	reg [regindex_bits-1:0] decoded_rs;
 
 	always @* begin
@@ -1803,8 +1837,21 @@ module picorv32 #(
 			end
 
 			cpu_state_exec: begin
-				reg_out <= reg_pc + decoded_imm;
-				if ((TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) && (alu_wait || alu_wait_2)) begin
+				if (instr_pmac16) begin
+					if (!pmac16_wait) begin
+						pmac16_mul_reg <= pmac16_mul_res;
+						pmac16_wait <= 1;
+						decoded_rs1 <= latched_rd; // Switch rs1 port to read rd
+						cpu_state <= cpu_state_exec;
+					end else begin
+						reg_out <= sat_pmac16;
+						latched_store <= 1;
+						pmac16_wait <= 0;
+						cpu_state <= cpu_state_fetch;
+					end
+				end else begin
+					reg_out <= reg_pc + decoded_imm;
+					if ((TWO_CYCLE_ALU || TWO_CYCLE_COMPARE) && (alu_wait || alu_wait_2)) begin
 					mem_do_rinst <= mem_do_prefetch && !alu_wait_2;
 					alu_wait <= alu_wait_2;
 				end else
@@ -1824,6 +1871,7 @@ module picorv32 #(
 					latched_stalu <= 1;
 					cpu_state <= cpu_state_fetch;
 				end
+				end // end of instr_pmac16 else block
 			end
 
 			cpu_state_shift: begin

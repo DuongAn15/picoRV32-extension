@@ -10,3 +10,5 @@ c_code/prog.bin
 c_code/*.o
 c_code/*.hex
 c_code/conv_to_init
+
+/docs
