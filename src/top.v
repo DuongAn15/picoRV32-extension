@@ -71,7 +71,8 @@ module top (
    wire [31:0]                mem_rdata;
    wire [3:0]                 mem_wstrb;
    wire                       mem_ready;
-   wire                       mem_inst;
+   wire                       mem_valid;
+   wire                       mem_instr;
    wire                       leds_sel;
    wire                       leds_ready;
    wire [31:0]                leds_data_o;

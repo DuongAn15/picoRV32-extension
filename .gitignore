@@ -12,3 +12,7 @@ c_code/*.hex
 c_code/conv_to_init
 
 /docs
+
+# Simulation files
+*.vcd
+*.vvp

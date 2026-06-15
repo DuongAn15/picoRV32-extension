@@ -1,5 +1,38 @@
 /* Copyright 2024 Grug Huhler.  License SPDX BSD-2-Clause. */
 
+`ifdef __ICARUS__
+module sram #(parameter ADDRWIDTH=13) (
+    input wire clk,
+    input wire resetn,
+    input wire sram_sel,
+    input wire [3:0] wstrb,
+    input wire [ADDRWIDTH-1:0] addr,
+    input wire [31:0] sram_data_i,
+    output wire sram_ready,
+    output reg [31:0] sram_data_o
+);
+    reg [31:0] mem [0:(1<<(ADDRWIDTH-2))-1];
+    
+    initial begin
+        $readmemh("../c_code/prog.hex", mem);
+    end
+
+    always @(posedge clk) begin
+        if (sram_sel) begin
+            if (wstrb[0]) mem[addr[12:2]][7:0]   <= sram_data_i[7:0];
+            if (wstrb[1]) mem[addr[12:2]][15:8]  <= sram_data_i[15:8];
+            if (wstrb[2]) mem[addr[12:2]][23:16] <= sram_data_i[23:16];
+            if (wstrb[3]) mem[addr[12:2]][31:24] <= sram_data_i[31:24];
+            sram_data_o <= mem[addr[12:2]];
+        end
+    end
+    
+    reg ready;
+    always @(posedge clk) ready <= sram_sel;
+    assign sram_ready = ready;
+endmodule
+
+`else
 // 8192 bytes of sram formed from 4 Gowin single-port BSRAMs.
 
 module sram
@@ -342,3 +375,4 @@ module sram
         ready <= 1'b0;
    
 endmodule // sram
+`endif

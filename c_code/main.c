@@ -11,15 +11,31 @@
 #include "uart.h"
 #include "countdown_timer.h"
 
-#define MEMSIZE 1000
-unsigned long mem[MEMSIZE];
-unsigned long test_vals[] = {0, 0xffffffff, 0xaaaaaaaa, 0x55555555, 0xdeadbeef};
-
-#define CUSTOM_OP(f3, rd, rs1, rs2) \
+// ============================
+// DSP Extension Macros
+// Opcode: 0x0B (CUSTOM-0)
+// funct7: 7 (0000111)
+// funct3: 0 (PADDS16), 1 (PSUBS16), 2 (PMAC16)
+// ============================
+#define PADDS16(rd, rs1, rs2) \
     __asm__ volatile ( \
-        ".insn r 0x0B, %3, 0, %0, %1, %2" \
+        ".insn r 0x0B, 0, 7, %0, %1, %2" \
         : "=r" (rd) \
-        : "r" (rs1), "r" (rs2), "i" (f3) \
+        : "r" (rs1), "r" (rs2) \
+    )
+
+#define PSUBS16(rd, rs1, rs2) \
+    __asm__ volatile ( \
+        ".insn r 0x0B, 1, 7, %0, %1, %2" \
+        : "=r" (rd) \
+        : "r" (rs1), "r" (rs2) \
+    )
+
+#define PMAC16(rd, rs1, rs2) \
+    __asm__ volatile ( \
+        ".insn r 0x0B, 2, 7, %0, %1, %2" \
+        : "+r" (rd) \
+        : "r" (rs1), "r" (rs2) \
     )
 
 // ============================
@@ -54,109 +70,109 @@ void uart_print_dec(unsigned int x)
 
 
 // ============================
-// Benchmark tổng hợp
+// DSP Tests and Benchmark
 // ============================
-void benchmark_all()
-{
-    int a = 5, b = 3;
-    int r = 0;
-    int i;
 
-    unsigned int t1, t2;
-    unsigned int loop_cost;
+void test_dsp() {
+    uart_puts("\n===== DSP Instruction Tests =====\r\n");
+    int a = 0x7FFF0001; // 32767 (hi), 1 (lo)
+    int b = 0x00010002; // 1 (hi), 2 (lo)
+    int res = 0;
 
-    // =========================
-    // 1. Đo loop overhead
-    // =========================
+    PADDS16(res, a, b);
+    uart_puts("PADDS16 (7FFF0001 + 00010002) = ");
+    uart_print_hex(res);
+    uart_puts(" (Expected: 7FFF0003)\r\n");
+
+    PSUBS16(res, a, b);
+    uart_puts("PSUBS16 (7FFF0001 - 00010002) = ");
+    uart_print_hex(res);
+    uart_puts(" (Expected: 7FFEFFFF)\r\n");
+
+    res = 10;
+    PMAC16(res, a, b);
+    uart_puts("PMAC16 (10 + 1 * 2) = ");
+    uart_print_hex(res);
+    uart_puts(" (Expected: 0000000C)\r\n");
+}
+
+#define FIR_TAPS 16
+#define DATA_LEN 100
+
+short coeffs[FIR_TAPS] = {
+    1, 2, 3, 4, 5, 6, 7, 8,
+    8, 7, 6, 5, 4, 3, 2, 1
+};
+
+short input_data[DATA_LEN];
+int output_std[DATA_LEN];
+int output_dsp[DATA_LEN];
+
+void init_data() {
+    for (int i = 0; i < DATA_LEN; i++) {
+        input_data[i] = (i % 20) - 10;
+    }
+}
+
+void benchmark_fir() {
+    init_data();
+
+    uart_puts("\n===== FIR Filter Benchmark =====\r\n");
+
+    // ----- Standard C -----
+    unsigned int t1 = rdcycle();
+    for (int i = FIR_TAPS - 1; i < DATA_LEN; i++) {
+        int acc = 0;
+        for (int j = 0; j < FIR_TAPS; j++) {
+            acc += input_data[i - j] * coeffs[j];
+        }
+        output_std[i] = acc;
+    }
+    unsigned int t2 = rdcycle();
+    unsigned int std_cycles = t2 - t1;
+
+    // ----- DSP Extension -----
     t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        asm volatile("" ::: "memory");
+    for (int i = FIR_TAPS - 1; i < DATA_LEN; i++) {
+        int acc = 0;
+        for (int j = 0; j < FIR_TAPS; j++) {
+            int a = input_data[i - j];
+            int b = coeffs[j];
+            PMAC16(acc, a, b);
+        }
+        output_dsp[i] = acc;
     }
     t2 = rdcycle();
+    unsigned int dsp_cycles = t2 - t1;
 
-    loop_cost = (t2 - t1) / 1000;
-
-    uart_puts("\nLoop overhead: ");
-    uart_print_dec(loop_cost);
-    uart_puts(" cycles\r\n");
-
-    // =====================================================
-    // =============== CPU NATIVE ===========================
-    // =====================================================
-
-    // ---- ADD ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        asm volatile ("add %0, %1, %2"
-            : "=r"(r)
-            : "r"(a), "r"(b));
+    // ----- Verify Output -----
+    int errors = 0;
+    for (int i = FIR_TAPS - 1; i < DATA_LEN; i++) {
+        if (output_std[i] != output_dsp[i]) {
+            errors++;
+        }
     }
-    t2 = rdcycle();
 
-    unsigned int cpu_add = (t2 - t1)/1000 - loop_cost;
+    uart_puts("Standard Cycles: ");
+    uart_print_dec(std_cycles);
+    uart_puts("\r\n");
 
-    // ---- XOR ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        asm volatile ("xor %0, %1, %2"
-            : "=r"(r)
-            : "r"(a), "r"(b));
+    uart_puts("DSP Cycles:      ");
+    uart_print_dec(dsp_cycles);
+    uart_puts("\r\n");
+
+    if (errors == 0) {
+        uart_puts("Verification:    PASSED\r\n");
+    } else {
+        uart_puts("Verification:    FAILED (");
+        uart_print_dec(errors);
+        uart_puts(" errors)\r\n");
     }
-    t2 = rdcycle();
-
-    unsigned int cpu_xor = (t2 - t1)/1000 - loop_cost;
-
-    // ---- SHL ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        asm volatile ("sll %0, %1, %2"
-            : "=r"(r)
-            : "r"(a), "r"(b));
-    }
-    t2 = rdcycle();
-
-    unsigned int cpu_shl = (t2 - t1)/1000 - loop_cost;
-
-    // =====================================================
-    // =============== PRINT RESULT =========================
-    // =====================================================
-
-    uart_puts("\n===== CPU cycles =====\r\n");
-    uart_puts("ADD : "); uart_print_dec(cpu_add); uart_puts("\r\n");
-    uart_puts("XOR : "); uart_print_dec(cpu_xor); uart_puts("\r\n");
-    uart_puts("SHL : "); uart_print_dec(cpu_shl); uart_puts("\r\n");
 }
 
 
-/* A simple memory test.  Delete this and also array mem
-   above to free much of the SRAM for other things
-*/
 
-int mem_test (void)
-{
-  int i, test, errors;
-  unsigned long val, val_read;
 
-  errors = 0;
-  for (test = 0; test < sizeof(test_vals)/sizeof(test_vals[0]); test++) {
-
-    for (i = 0; i < MEMSIZE; i++) mem[i] = test_vals[test];
-
-    for (i = 0; i < MEMSIZE; i++) {
-      val_read = mem[i];
-      if (val_read != test_vals[test]) errors += 1;
-    }
-  }
-
-  for (i = 0; i < MEMSIZE; i++) mem[i] = i + (i << 17);
-
-  for (i = 0; i < MEMSIZE; i++) {
-    val_read = mem[i];
-    if (val_read != i + (i << 17)) errors += 1;
-  }
-
-  return(errors);
-}
 
 /* The picorv32 core implements several counters and
    instructions to access them.  These are part of the
@@ -315,23 +331,17 @@ int main()
   uart_set_div(234); /* 27000000/115200 */
   endian_test((volatile unsigned int *)&i);
 
-  /* Run the mem_test */
-  if (mem_test())
-    uart_puts("memory test FAILED.\r\n");
-  else
-    uart_puts("memory test PASSED.\r\n");
 
   cdt_test();
   
   /* Test UART input */
-  uart_rx_test();
+  //uart_rx_test();
   
-  uart_puts("\r\nPress a key to start LED counting and lots of prints:\r\n");
-  (void) uart_getchar();
+  uart_puts("\r\nStarting DSP benchmark immediately...\r\n");
+  //(void) uart_getchar();
 
-  //benchmark_all();
-
-
+  test_dsp();
+  benchmark_fir();
 
   /* Print stuff over and over and have the LED count,
      both writing and reading the LED.

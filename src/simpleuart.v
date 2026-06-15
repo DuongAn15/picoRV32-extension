@@ -123,6 +123,7 @@ module simpleuart #(parameter integer DEFAULT_DIV = 1) (
 				send_dummy <= 0;
 			end else
 			if (reg_dat_we && !send_bitcnt) begin
+				$write("%c", reg_dat_di[7:0]); // Echo to simulation console
 				send_pattern <= {1'b1, reg_dat_di[7:0], 1'b0};
 				send_bitcnt <= 10;
 				send_divcnt <= 0;

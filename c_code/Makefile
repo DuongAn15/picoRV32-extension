@@ -35,7 +35,7 @@ prog.bin: prog.elf
 	$(OBJCOPY) prog.elf -O binary prog.bin
 
 prog.hex: prog.bin
-	od -v -Ax -t x4 prog.bin > prog.hex
+	od -v -An -t x4 prog.bin > prog.hex
 
 clean:
 	rm -f prog.elf prog.hex prog.bin main.o conv_to_init countdown_timer.o uart.o leds.o
