@@ -191,7 +191,9 @@ module top (
        .ENABLE_FAST_MUL(ENABLE_FAST_MUL),
        .ENABLE_IRQ(1),
        .ENABLE_IRQ_QREGS(ENABLE_IRQ_QREGS),
-       .ENABLE_PCPI(0)
+       .ENABLE_PCPI(0),
+       .TWO_CYCLE_ALU(1),
+       .TWO_CYCLE_COMPARE(1)
        ) cpu
        (
         .clk         (clk),

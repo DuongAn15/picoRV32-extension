@@ -118,37 +118,6 @@ void benchmark_all()
     unsigned int cpu_shl = (t2 - t1)/1000 - loop_cost;
 
     // =====================================================
-    // =============== PCPI ================================
-    // =====================================================
-
-    // ---- CADD ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        CUSTOM_OP(0, r, a, b);
-    }
-    t2 = rdcycle();
-
-    unsigned int pcpi_add = (t2 - t1)/1000 - loop_cost;
-
-    // ---- CXOR ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        CUSTOM_OP(1, r, a, b);
-    }
-    t2 = rdcycle();
-
-    unsigned int pcpi_xor = (t2 - t1)/1000 - loop_cost;
-
-    // ---- CSHL ----
-    t1 = rdcycle();
-    for (i = 0; i < 1000; i++) {
-        CUSTOM_OP(2, r, a, b);
-    }
-    t2 = rdcycle();
-
-    unsigned int pcpi_shl = (t2 - t1)/1000 - loop_cost;
-
-    // =====================================================
     // =============== PRINT RESULT =========================
     // =====================================================
 
@@ -156,11 +125,6 @@ void benchmark_all()
     uart_puts("ADD : "); uart_print_dec(cpu_add); uart_puts("\r\n");
     uart_puts("XOR : "); uart_print_dec(cpu_xor); uart_puts("\r\n");
     uart_puts("SHL : "); uart_print_dec(cpu_shl); uart_puts("\r\n");
-
-    uart_puts("\n===== PCPI cycles =====\r\n");
-    uart_puts("CADD: "); uart_print_dec(pcpi_add); uart_puts("\r\n");
-    uart_puts("CXOR: "); uart_print_dec(pcpi_xor); uart_puts("\r\n");
-    uart_puts("CSHL: "); uart_print_dec(pcpi_shl); uart_puts("\r\n");
 }
 
 
@@ -204,7 +168,7 @@ static inline unsigned int readtime(void)
 {
   unsigned int val;
   unsigned long long jj;
-  asm volatile("rdtime %0" : "=r" (val));
+  asm volatile("rdcycle %0" : "=r" (val));
   return val;
 
 }
@@ -367,31 +331,7 @@ int main()
 
   //benchmark_all();
 
-  int a = 5, b = 3, r;
 
-  CUSTOM_OP(0, r, a, b); // cadd
-  uart_puts("\nResult HEX: ");
-  uart_print_hex(r);
-  uart_puts("\r\n");
-  uart_puts("\nResult: ");
-  uart_print_dec(r);
-  uart_puts("\r\n");
-
-  CUSTOM_OP(1, r, a, b); // xor → 6
-  uart_puts("\nResult HEX: ");
-  uart_print_hex(r);
-  uart_puts("\r\n");
-  uart_puts("\nResult: ");
-  uart_print_dec(r);
-  uart_puts("\r\n");
-
-  CUSTOM_OP(2, r, a, b); // shift → 40
-  uart_puts("\nResult HEX: ");
-  uart_print_hex(r);
-  uart_puts("\r\n");
-  uart_puts("\nResult: ");
-  uart_print_dec(r);
-  uart_puts("\r\n");
 
   /* Print stuff over and over and have the LED count,
      both writing and reading the LED.

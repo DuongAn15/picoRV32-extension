@@ -1237,7 +1237,8 @@ module picorv32 #(
 	reg [31:0] cpuregs_rs1;
 	reg [31:0] cpuregs_rs2;
 
-	reg pmac16_wait = 0;
+	reg [1:0] pmac16_wait = 0;
+	reg [31:0] pmac16_rd_reg;
 
 	// --- P-extension-mini Logic ---
 	wire [16:0] padds16_hi = $signed(reg_op1[31:16]) + $signed(reg_op2[31:16]);
@@ -1252,7 +1253,7 @@ module picorv32 #(
 
 	wire [31:0] pmac16_mul_res = $signed(reg_op1[15:0]) * $signed(reg_op2[15:0]);
 	reg [31:0] pmac16_mul_reg;
-	wire [32:0] pmac16_acc = $signed(pmac16_mul_reg) + $signed(cpuregs_rs1); // using cpuregs_rs1 as rd in wait state
+	wire [32:0] pmac16_acc = $signed(pmac16_mul_reg) + $signed(pmac16_rd_reg); // using pmac16_rd_reg
 	wire [31:0] sat_pmac16 = (pmac16_acc[32] != pmac16_acc[31]) ? (pmac16_acc[32] ? 32'h80000000 : 32'h7FFFFFFF) : pmac16_acc[31:0];
 	// ------------------------------
 
@@ -1379,18 +1380,20 @@ module picorv32 #(
 `endif
 	end
 
+	wire [regindex_bits-1:0] pmac_rs1 = (instr_pmac16 && (pmac16_wait == 1)) ? latched_rd : decoded_rs1;
+
 	always @* begin
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
 `ifndef RISCV_FORMAL_BLACKBOX_REGS
-			cpuregs_rs1 = decoded_rs1 ? cpuregs[decoded_rs1] : 0;
+			cpuregs_rs1 = pmac_rs1 ? cpuregs[pmac_rs1] : 0;
 			cpuregs_rs2 = decoded_rs2 ? cpuregs[decoded_rs2] : 0;
 `else
-			cpuregs_rs1 = decoded_rs1 ? $anyseq : 0;
+			cpuregs_rs1 = pmac_rs1 ? $anyseq : 0;
 			cpuregs_rs2 = decoded_rs2 ? $anyseq : 0;
 `endif
 		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
+			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : pmac_rs1;
 `ifndef RISCV_FORMAL_BLACKBOX_REGS
 			cpuregs_rs1 = decoded_rs ? cpuregs[decoded_rs] : 0;
 `else
@@ -1404,7 +1407,7 @@ module picorv32 #(
 	wire[31:0] cpuregs_rdata2;
 
 	wire [5:0] cpuregs_waddr = latched_rd;
-	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? decoded_rs1 : decoded_rs;
+	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? pmac_rs1 : decoded_rs;
 	wire [5:0] cpuregs_raddr2 = ENABLE_REGS_DUALPORT ? decoded_rs2 : 0;
 
 	`PICORV32_REGS cpuregs (
@@ -1421,10 +1424,10 @@ module picorv32 #(
 	always @* begin
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
-			cpuregs_rs1 = decoded_rs1 ? cpuregs_rdata1 : 0;
+			cpuregs_rs1 = pmac_rs1 ? cpuregs_rdata1 : 0;
 			cpuregs_rs2 = decoded_rs2 ? cpuregs_rdata2 : 0;
 		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
+			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : pmac_rs1;
 			cpuregs_rs1 = decoded_rs ? cpuregs_rdata1 : 0;
 			cpuregs_rs2 = cpuregs_rs1;
 		end
@@ -1838,10 +1841,13 @@ module picorv32 #(
 
 			cpu_state_exec: begin
 				if (instr_pmac16) begin
-					if (!pmac16_wait) begin
+					if (pmac16_wait == 0) begin
 						pmac16_mul_reg <= pmac16_mul_res;
 						pmac16_wait <= 1;
-						decoded_rs1 <= latched_rd; // Switch rs1 port to read rd
+						cpu_state <= cpu_state_exec;
+					end else if (pmac16_wait == 1) begin
+						pmac16_rd_reg <= cpuregs_rs1;
+						pmac16_wait <= 2;
 						cpu_state <= cpu_state_exec;
 					end else begin
 						reg_out <= sat_pmac16;
