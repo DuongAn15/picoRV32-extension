@@ -2,7 +2,7 @@
 
 Dự án này mở rộng vi kiến trúc lõi vi xử lý mã nguồn mở **PicoRV32 (RISC-V)** bằng cách tích hợp thêm một Khối Xử lý Tín hiệu Số chuyên dụng (DSP Extension - Hardware Accelerator). Dự án được thiết kế để nạp trực tiếp và chạy trên bo mạch FPGA **Gowin Tang Nano 9K**.
 
-## 🌟 Điểm Nhấn Công Nghệ
+## Công Nghệ
 - **Tập Lệnh Tùy Chỉnh (Custom Instructions):** Bổ sung 3 lệnh hoàn toàn mới vào kiến trúc tập lệnh RISC-V thông qua opcode `CUSTOM-0` (0x0B).
   - `PADDS16`: Cộng song song hai số 16-bit.
   - `PSUBS16`: Trừ song song hai số 16-bit.
@@ -10,7 +10,7 @@ Dự án này mở rộng vi kiến trúc lõi vi xử lý mã nguồn mở **Pi
 - **Mô Phỏng SoC Hoàn Chỉnh (Testbench):** Tự động hóa kiểm thử mã C trên Icarus Verilog với `tb_soc.v`, hỗ trợ hiển thị dữ liệu truyền UART ra Terminal theo thời gian thực (real-time).
 - **Giao Tiếp C/C++:** Đóng gói các lệnh phần cứng thành các Macro Nội tuyến (Inline Assembly) siêu nhẹ trong file `c_code/main.c`.
 
-## 🚀 Kết Quả Đánh Giá Hiệu Năng (Benchmark)
+## Kết Quả Đánh Giá Hiệu Năng (Benchmark)
 Bài kiểm tra thực tế sử dụng Thuật toán Lọc **FIR (Finite Impulse Response)** 16-tap qua 100 mẫu dữ liệu. Kết quả thu được trực tiếp từ FPGA (cũng như giả lập) qua cổng UART:
 
 ```text
